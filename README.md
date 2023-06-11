@@ -1,1 +1,3 @@
-# SmoothHess_NeurIPS2023
+# Anonymous code for NeurIPS 2023 submission: "SmoothHess: ReLU Network Feature Interactions via Stein's Lemma"
+
+- FourQuadrant.ipynb : ... 
