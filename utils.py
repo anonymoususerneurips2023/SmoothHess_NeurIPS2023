@@ -1,15 +1,7 @@
 import torch 
 from cvxpy import * 
 import numpy as np 
-import torch 
-from torch.autograd.functional import hessian
-import pandas as pd
-import os
-import json
-import sys 
-import time 
-from math import sqrt 
-from sklearn.metrics import auc 
+from tqdm import tqdm 
 
 
 # Local Imports
@@ -37,13 +29,6 @@ def SampleFromBall(d, n1, r):
 
 
 ######## Optimization #######
-
-
-
-# def eigen_topk_convert_grad_hess(Grad, Hess):
-
-    
-#     return Grad_New, Hess_New
 
 ######################### Inputs: #########################
 # (1) Grad : Gradient, d dimensional vector
@@ -89,7 +74,34 @@ def FindOptimalDelta(Grad, Hess, r, min = True, include_grad = True, savedir = N
     if V_tilde is not None:
         optimal_delta = np.matmul(V_tilde, optimal_delta)
 
-    if not (savedir is None or savename is None):
-        np.save(savedir + savename + ".npy" , optimal_delta)
-
     return optimal_val, optimal_delta 
+
+def SecondOrderAttack_ListOfPoints(GradList, HessList, T, r):
+        
+        AttackList = torch.zeros((len(GradList), len(GradList[0].flatten())))
+
+        for ind in tqdm(range(len(GradList))):
+            Grad = GradList[ind]
+            Hess = HessList[ind]
+            Grad = Grad.flatten() 
+            L, V = torch.linalg.eig(Hess) #eigh
+            L, V = L.real, V.real 
+
+            eig_sum_abs = L.real.abs().sum()
+            eig_abs_cumsum = L.real.abs().cumsum(dim =0)
+            k = torch.where(eig_abs_cumsum > T * eig_sum_abs)[0][0] + int(10) 
+
+            L_tilde = L[:k].real 
+            V_tilde = V[:,:k].real 
+            L_tilde = torch.diag(L_tilde) # diagonal eigenvalue matrix 
+    
+            ##### Set reduced Grad and Hessian 
+            Grad = torch.matmul(Grad, V_tilde)
+            Hess = L_tilde
+            print("Done Computing Eigenvectors")
+            
+            _, optimal_delta = FindOptimalDelta(Grad, Hess, r, min = True, include_grad = True, V_tilde = V_tilde)
+            AttackList[ind,:] = torch.tensor(optimal_delta)
+        
+        return AttackList
+        

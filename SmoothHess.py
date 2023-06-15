@@ -1,7 +1,8 @@
 import torch   
 import numpy as np 
 from Datasets import *
-from tqdm.auto import tqdm 
+# from tqdm.auto import tqdm 
+from tqdm import tqdm 
 
 ############ Inputs #############
 # (1) model: NN of interest
@@ -43,8 +44,11 @@ def SmoothGeneral(model, logit_class, iterations, x, ReflectSamples, std, n1, SG
     if "Penult" in function:
         neuron_ind = int(function.split("_")[1])
 
-    for i in tqdm(range(iterations), position = 0, leave = True ):
-              
+    # for i in tqdm(range(iterations), position = 0, leave = True ):
+    # for i in tqdm(range(iterations)):
+    for i in range(iterations): 
+        # if i % 5 == 0 :
+        #     print(i)         
         MVN_Unit_Samples = torch.normal(mean = torch.zeros(input_dim * n1), std = torch.ones(input_dim * n1))
         MVN_Unit_Samples = MVN_Unit_Samples.view(n1, input_dim)
      

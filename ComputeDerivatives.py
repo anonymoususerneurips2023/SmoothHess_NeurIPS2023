@@ -64,7 +64,6 @@ def Generate_Grad_Hess_From_List(model, data, args, method = "Smooth", savedir =
 
                 Hess = torch.zeros((len(Grad), len(Grad))).cuda()    
 
-                
             elif function == "SoftMax": #ToDo Clean 
                 Grad, Hess = GetVanillaGradHess(model, point, logit_class, function, args)
 
@@ -77,12 +76,73 @@ def Generate_Grad_Hess_From_List(model, data, args, method = "Smooth", savedir =
     return GradList, HessList 
 
 
-
-
 def GetVanillaGradHess(model, point, logit_class, function, args):
+    assert function == "SoftMax", "Non-SoftMax Vanilla Hess is 0, This Method Is Overkill Just Compute Vanilla Grad"
     #### If function = SoftMax take time to compute Hessian, else just compute grad and set Hessian to 0
+    xc = point.clone() 
+    xc = torch.nn.Parameter(xc)
+    xc.requires_grad = True
 
-    return 0 
+    if not args['dataset'] == "CIFAR10":
+        xc = xc.view(args['OriginalDim'])
+        #### If using softmax 
+        softmax = torch.nn.Softmax()
+        selection_layer = torch.nn.Linear(in_features = args['num_classes'], out_features = 1, bias = False).cuda() 
+        selection_layer.weight.data = torch.zeros(*selection_layer.weight.data.shape).float() 
+        selection_layer.weight.data[0,logit_class] = torch.tensor(1).float() 
+        selection_layer.requires_grad = True 
+
+        if function == "SoftMax":
+            model.f.append(softmax)
+        model.f.append(selection_layer)
+
+        model = model.cuda() 
+        outputs = model(xc.cuda())
+        grad = torch.autograd.grad(outputs, xc)
+        hess = hessian(model, xc) # Change out to functorch version 
+
+        hess = hess.detach().cpu() #.detach().cpu().numpy()
+        grad = grad[0].detach().cpu() #.detach().cpu().numpy()
+
+        if function == "SoftMax":
+            model.f = model.f[:-2]
+    else:
+        xc = xc.view(args['OriginalDim']).unsqueeze(dim = 0)
+        softmax = torch.nn.Softmax()
+        selection_layer = torch.nn.Linear(in_features = args['num_classes'], out_features = 1, bias = False).cuda() 
+        selection_layer.weight.data = torch.zeros(*selection_layer.weight.data.shape).float() 
+        selection_layer.weight.data[0,logit_class] = torch.tensor(1).float() 
+        selection_layer.requires_grad = True 
+
+        if function == "SoftMax":
+            model.softmax = softmax
+        model.selection_layer = selection_layer
+        model = model.cuda() 
+        
+        
+        outputs = model(xc.cuda())
+        grad = torch.autograd.grad(outputs, xc)
+        grad = grad[0].detach().cpu() 
+
+        hess = torch.zeros((len(point.flatten()), len(point.flatten()))).cuda() 
+
+        for i in range(len(point.flatten())):
+            if i % 100 == 0:
+                print(i)
+            v = torch.zeros(len(point.flatten())).cuda() 
+            v[i] = 1 
+            v = v.view(xc.shape)
+            _, hvprod = torch.autograd.functional.hvp(model, xc, v)
+            hess[i,:] = hvprod.flatten() 
+        
+        # reset so unused
+        model.softmax = None
+        model.selection_layer = None   
+
+
+    hess = 1/2 *  ( hess + hess.T)
+
+    return torch.tensor(grad).flatten(), torch.tensor(hess)
 
 
 
@@ -211,6 +271,6 @@ def GetSPGradHess(model, x, logit_class, function = "Logit", savedir= "./", save
 
     model.replace_softplus_relu() 
 
-    return torch.tensor(grad), torch.tensor(hess) 
+    return torch.tensor(grad).flatten(), torch.tensor(hess) 
 
 
